@@ -1600,7 +1600,7 @@ body{font-weight:500;}
 // Change ce numéro à chaque mise à jour importante du fichier.
 // Au chargement, si l'utilisateur voit une version différente de la dernière stockée,
 // on force un reload propre pour contourner le cache iOS Safari agressif.
-const APP_VERSION = 'v2026-11-04-club3';
+const APP_VERSION = 'v2026-11-05-club4';
 
 (function checkVersion(){
   try {
@@ -3916,185 +3916,176 @@ function exportStatsPDF(){
     return {sw,natPres,natPct,natKm,muscPres,muscPct,compPres,compPct,isArchived};
   }).sort((a,b)=>b.natPct-a.natPct);
 
-  // ── Couleur selon seuil
-  const pctStyle=(pct)=>{
-    if(pct>=75) return {color:'#15803d',bg:'#dcfce7',label:'Excellent'};
-    if(pct>=50) return {color:'#c2410c',bg:'#ffedd5',label:'Moyen'};
-    return      {color:'#b91c1c',bg:'#fee2e2',label:'Insuffisant'};
-  };
-  const pctStyleOrDash=(pct,total)=>{
-    if(total===0) return {color:'#9ca3af',bg:'#f3f4f6',label:'—'};
-    return pctStyle(pct);
-  };
-
-  const _sw=document.querySelector('.top-bar-scene g[transform]');
-  const _pdfSwimmer=_sw?_sw.outerHTML.replace(/transform="[^"]*"/,'transform="translate(385,28) scale(2.1)"'):'';
+  // ══ Présentation « Club » — fiche A4 : bandeau marine, pastilles, lignes en cartes avec barres ══
+  const pctColor=(pct)=> pct>=75 ? '#15803D' : pct>=50 ? '#C2410C' : '#B91C1C';
+  const fmtKm=(v)=>v.toFixed(1).replace('.',',');
+  const isSeason = statMode==='season';
   const dateGen=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-  const periodLabel = statMode==='season'
+  const periodLabel = isSeason
     ? `Saison ${statSeasonStart}–${String(statSeasonStart+1).slice(2)}`
     : `${MFR[statMonth]} ${statYear}`;
+  const periodShort = isSeason
+    ? `${statSeasonStart}–${String(statSeasonStart+1).slice(2)}`
+    : `${MFR[statMonth]} ${statYear}`.toUpperCase();
   const moisLabel = periodLabel;
-  const bilanSub = statMode==='season'
-    ? `Bilan de saison — ${periodLabel}`
-    : `Bilan de présence — ${periodLabel}`;
+  const hasComp = comp.count>0;
 
-  // ── Lignes du tableau (4 colonnes natation + 2 colonnes muscu)
+  // Nageur blanc du bandeau de l'app, replacé dans le bandeau A4
+  const _sw=document.querySelector('.top-bar-scene g[transform]');
+  const _pdfSwimmer=_sw?_sw.outerHTML.replace(/transform="[^"]*"/,'transform="translate(290,95) scale(2.92)"'):'';
+
+  // Densité : plus il y a de nageurs, plus les lignes sont compactes, pour tenir sur une page A4
+  const n = rows.length;
+  const pitch = n>0 ? Math.floor(700/n) : 66;
+  const rowH = Math.max(30, Math.min(60, pitch-5));
+  const rowGap = Math.max(3, Math.min(6, pitch-rowH));
+  const big = rowH>=50, mid = rowH>=40;
+  const dens = [
+    `--rowh:${rowH}px`,`--gap:${rowGap}px`,
+    `--av:${Math.max(20,Math.min(36,rowH-14))}px`,`--avfs:${big?13:mid?12:10}px`,
+    `--nmfs:${big?14:mid?13:12}px`,`--grfs:${big?11:mid?10:9.5}px`,
+    `--frfs:${big?14:mid?13:12}px`,`--pcfs:${big?12:mid?11:10.5}px`,
+    `--bar:${big?7:mid?6:rowH>=34?5:4}px`,`--pillv:${big?6:4}px`,`--kmfs:${big?16:mid?14:13}px`,
+    `--tpl:216px repeat(${hasComp?3:2},minmax(0,1fr)) 96px`
+  ].join(';');
+
+  const cell=(pres,total,pct)=>{
+    if(total===0) return `<div class="cell"><div class="cell-top"><b class="frac dim">—</b></div><span class="track"></span></div>`;
+    const c=pctColor(pct);
+    return `<div class="cell"><div class="cell-top"><b class="frac">${pres}/${total}</b><b class="pct" style="color:${c}">${pct} %</b></div><span class="track"><span class="fill" style="background:${c};width:${pct}%"></span></span></div>`;
+  };
+  const AV=['#0A8FAE','#6C3BF5','#C2410C','#0A1F44','#15803D'];
   const lignes=rows.map((r,i)=>{
-    const sNat = pctStyleOrDash(r.natPct,  nat.count);
-    const sMus = pctStyleOrDash(r.muscPct, musc.count);
-    const natBadge = nat.count===0
-      ? `<span class="dash">—</span>`
-      : `<div class="pct-badge" style="background:${sNat.bg};color:${sNat.color};border:1.5px solid ${sNat.color};">${r.natPct}%</div>`;
-    const muscBadge = musc.count===0
-      ? `<span class="dash">—</span>`
-      : `<div class="pct-badge" style="background:${sMus.bg};color:${sMus.color};border:1.5px solid ${sMus.color};">${r.muscPct}%</div>`;
-    const sComp = pctStyleOrDash(r.compPct, comp.count);
-    const compBadge = comp.count===0 ? '' : `<div class="pct-badge" style="background:${sComp.bg};color:${sComp.color};border:1.5px solid ${sComp.color};">${r.compPct}%</div>`;
-    return `
-    <tr class="${i%2===0?'even':'odd'}">
-      <td class="col-name">${r.sw.lastname.toUpperCase()} ${r.sw.firstname}${r.isArchived?' <span class="pdf-arch">📦</span>':''}<br><span class="group-label">${r.sw.group}</span></td>
-      <td class="col-sessions">${nat.count===0?'<span class="dash">—</span>':`${r.natPres} <span class="on-total">/ ${nat.count}</span>`}</td>
-      <td class="col-km">${r.natKm.toFixed(1)} <span class="unit">km</span></td>
-      <td class="col-pct">${natBadge}</td>
-      <td class="col-sessions muscu">${musc.count===0?'<span class="dash">—</span>':`${r.muscPres} <span class="on-total">/ ${musc.count}</span>`}</td>
-      <td class="col-pct">${muscBadge}</td>
-      ${comp.count>0?`<td class="col-sessions comp">${r.compPres} <span class="on-total">/ ${comp.count}</span></td><td class="col-pct">${compBadge}</td>`:''}
-    </tr>`;
+    const init=((r.sw.firstname||'').charAt(0)+(r.sw.lastname||'').charAt(0)).toUpperCase();
+    return `<div class="row">
+      <div class="who"><span class="av" style="background:${AV[i%5]}">${escapeHtml(init)}</span><div class="who-t"><span class="nm">${escapeHtml(r.sw.firstname||'')} ${escapeHtml(r.sw.lastname||'')}${r.isArchived?' <span class="arch">📦</span>':''}</span><span class="grp">${escapeHtml(r.sw.group||'')}</span></div></div>
+      ${cell(r.natPres,nat.count,r.natPct)}${cell(r.muscPres,musc.count,r.muscPct)}${hasComp?cell(r.compPres,comp.count,r.compPct):''}
+      <span class="km">${fmtKm(r.natKm)} <small>km</small></span>
+    </div>`;
   }).join('');
+
+  const kmStr = fmtKm(nat.km);
+  const kmFs = kmStr.length>6 ? 60 : 76;
+  const avgLine = nat.count>0 ? `${fmtKm(nat.km/nat.count)} km par séance en moyenne` : 'Aucune séance de natation';
 
   // ── HTML de la popup
   const html=`<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=794">
 <title>Bilan ${moisLabel}</title>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:'Inter',Arial,sans-serif;background:#fff;color:#0A1F44;padding:28px 32px;max-width:800px;margin:0 auto;}
-  /* En-tête Club : bandeau marine, nageur blanc, grosse distance */
-  .hero{position:relative;background:#0A1F44;border-radius:0 0 30px 30px;padding:26px 30px 24px;min-height:156px;overflow:hidden;color:#fff;display:flex;justify-content:space-between;align-items:flex-start;margin:0 -32px 18px;}
-  .hero-scene{position:absolute;left:0;top:0;width:100%;height:100%;}
-  .hero-left,.hero-right{position:relative;}
-  .hero-brand{font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;letter-spacing:.3px;}
-  .hero-brand span{color:#38D1F0;} .hero-brand i{font-style:normal;font-weight:600;color:#A9B8D4;margin-left:4px;}
-  .hero-left h1{font-family:'Bricolage Grotesque',sans-serif;font-size:36px;font-weight:800;letter-spacing:-1px;line-height:1.05;margin-top:10px;}
-  .hero-sub{font-size:12px;font-weight:600;color:#C9D4EA;margin-top:8px;}
-  .hero-right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px;}
-  .hero-label{font-size:11px;font-weight:700;letter-spacing:1.3px;color:#A9B8D4;}
-  .hero-km{font-family:'Bricolage Grotesque',sans-serif;font-size:62px;font-weight:800;letter-spacing:-2.5px;line-height:1;color:#38D1F0;}
-  .hero-km small{font-size:24px;letter-spacing:0;color:#fff;font-weight:700;}
-  .hero-note{font-size:12px;font-weight:600;color:#fff;}
-  .kpis{display:flex;gap:10px;margin-bottom:16px;}
-  .kpi{flex:1;display:flex;align-items:center;justify-content:space-between;padding:9px 18px;border-radius:999px;font-size:12px;font-weight:700;}
-  .kpi b{font-family:'Bricolage Grotesque',sans-serif;font-size:24px;font-weight:800;}
-  .kpi-nat{background:#E6F8FC;color:#0A6B84;} .kpi-nat b{color:#0A8FAE;}
-  .kpi-musc{background:#FFEDE6;color:#9A3412;} .kpi-musc b{color:#C2410C;}
-  .kpi-comp{background:#EFE9FF;color:#5B21B6;} .kpi-comp b{color:#6C3BF5;}
-  /* Légende */
-  .legend{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap;}
-  .leg-item{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;}
-  .leg-dot{width:11px;height:11px;border-radius:50%;}
-  /* Tableau */
-  table{width:100%;border-collapse:collapse;font-size:13px;}
-  thead tr{background:#0A1F44;color:#fff;}
-  thead tr.group-row th{padding:8px 10px;font-size:12px;text-align:center;border-bottom:1px solid rgba(255,255,255,.25);}
-  thead th.group-nat{background:#0A8FAE;}
-  thead th.group-musc{background:#C2410C;}
-  thead th.group-comp{background:#6C3BF5;}
-  .col-sessions.comp{color:#6C3BF5;border-left:2px solid #E3E8F0;}
-  thead th{padding:9px 10px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;}
-  thead th.right{text-align:center;}
-  tr.even{background:#F3F5F9;}
-  tr.odd{background:#fff;}
-  td{padding:10px 10px;border-bottom:1px solid #e5e7eb;vertical-align:middle;}
-  .col-name{font-weight:700;font-size:13px;min-width:150px;}
-  .group-label{font-size:10px;font-weight:400;color:#6b7280;display:block;margin-top:2px;}
-  .col-sessions{text-align:center;font-weight:800;font-size:14px;color:#0A8FAE;white-space:nowrap;}
-  .col-sessions.muscu{color:#C2410C;border-left:2px solid #E3E8F0;}
-  .on-total{font-size:11px;font-weight:400;color:#9ca3af;}
-  .col-km{text-align:center;font-weight:800;font-size:14px;white-space:nowrap;color:#0A1F44;}
-  .unit{font-size:10px;color:#9ca3af;font-weight:400;}
-  .col-pct{text-align:center;min-width:74px;}
-  .pct-badge{display:inline-block;padding:4px 10px;border-radius:18px;font-weight:800;font-size:12px;letter-spacing:.3px;}
-  .dash{color:#cbd5e1;font-weight:600;font-size:14px;}
-  .pdf-arch{display:inline-block;font-size:10px;color:#6b7280;background:#f3f4f6;padding:1px 5px;border-radius:8px;border:1px solid #e5e7eb;font-weight:600;margin-left:4px;vertical-align:middle;}
-  /* Footer */
-  .footer{margin-top:22px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;display:flex;justify-content:space-between;}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{font-family:'Inter',system-ui,sans-serif;color:#0A1F44;background:#E9EDF3;}
+  .toolbar{display:flex;gap:10px;padding:14px;max-width:794px;margin:0 auto;}
+  .sheet{width:100%;max-width:794px;margin:0 auto 24px;background:#fff;display:flex;flex-direction:column;box-shadow:0 4px 24px rgba(10,31,68,.14);}
+  /* Bandeau */
+  .hero{position:relative;height:232px;flex-shrink:0;background:#0A1F44;border-radius:0 0 40px 40px;overflow:hidden;}
+  .hero svg{position:absolute;left:0;top:0;width:100%;height:100%;}
+  .hero-in{position:relative;padding:32px 44px 0;display:flex;align-items:flex-start;justify-content:space-between;}
+  .hero-l{display:flex;flex-direction:column;gap:6px;}
+  .brand{font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:700;color:#fff;letter-spacing:.4px;}
+  .brand .a{color:#38D1F0;} .brand .t{font-weight:600;color:#A9B8D4;margin-left:4px;}
+  h1{font-family:'Bricolage Grotesque',sans-serif;font-size:40px;font-weight:800;letter-spacing:-.8px;color:#fff;line-height:1.05;text-transform:uppercase;}
+  .period{font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;letter-spacing:6px;color:#38D1F0;}
+  .hero-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;padding-top:4px;}
+  .dlabel{font-size:12px;font-weight:700;letter-spacing:1.4px;color:#A9B8D4;}
+  .dkm{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;letter-spacing:-3px;line-height:1;color:#38D1F0;}
+  .dkm small{font-size:28px;letter-spacing:0;color:#fff;}
+  .davg{font-size:13px;font-weight:600;color:#fff;}
+  /* Pastilles */
+  .kpis{padding:20px 40px 0;display:grid;gap:10px;}
+  .kpi{padding:10px 18px;border-radius:999px;display:flex;align-items:center;justify-content:space-between;}
+  .kpi span{font-size:13px;font-weight:700;}
+  .kpi b{font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:800;}
+  .k-nat{background:#E6F8FC;} .k-nat span{color:#0A6B84;} .k-nat b{color:#0A8FAE;}
+  .k-musc{background:#FFEDE6;} .k-musc span{color:#9A3412;} .k-musc b{color:#C2410C;}
+  .k-comp{background:#EFE9FF;} .k-comp span{color:#5B21B6;} .k-comp b{color:#6C3BF5;}
+  /* Liste */
+  .list{padding:20px 40px 0;display:flex;flex-direction:column;gap:var(--gap);}
+  .cols{display:grid;grid-template-columns:var(--tpl);gap:14px;}
+  .head{padding:0 14px 2px;font-size:11px;font-weight:800;letter-spacing:1.2px;color:#4A5D80;}
+  .head .n{color:#0A8FAE;} .head .m{color:#C2410C;} .head .c{color:#6C3BF5;} .head .d{text-align:right;}
+  .row{display:grid;grid-template-columns:var(--tpl);gap:14px;align-items:center;height:var(--rowh);padding:0 8px;border-radius:999px;background:#F3F5F9;break-inside:avoid;page-break-inside:avoid;}
+  .who{display:flex;align-items:center;gap:10px;min-width:0;}
+  .av{width:var(--av);height:var(--av);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-size:var(--avfs);font-weight:800;color:#fff;flex-shrink:0;}
+  .who-t{display:flex;flex-direction:column;gap:1px;min-width:0;}
+  .nm{font-size:var(--nmfs);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .arch{font-size:10px;}
+  .grp{font-size:var(--grfs);font-weight:600;color:#4A5D80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cell{display:flex;flex-direction:column;gap:5px;}
+  .cell-top{display:flex;align-items:baseline;justify-content:space-between;}
+  .frac{font-family:'Bricolage Grotesque',sans-serif;font-size:var(--frfs);font-weight:800;} .frac.dim{color:#94A3B8;}
+  .pct{font-family:'Bricolage Grotesque',sans-serif;font-size:var(--pcfs);font-weight:800;}
+  .track{display:block;height:var(--bar);border-radius:999px;background:#D9E0EC;}
+  .fill{display:block;height:100%;border-radius:999px;}
+  .km{justify-self:end;padding:var(--pillv) 12px;border-radius:999px;background:#0A1F44;color:#fff;font-family:'Bricolage Grotesque',sans-serif;font-size:var(--kmfs);font-weight:800;white-space:nowrap;}
+  .km small{font-size:11px;font-weight:700;color:#38D1F0;}
+  .empty{padding:24px;text-align:center;color:#94A3B8;font-weight:600;}
+  /* Pied */
+  .foot{margin-top:18px;padding:0 40px 28px;display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:700;color:#4A5D80;}
+  .leg{display:flex;align-items:center;gap:14px;} .leg span{display:flex;align-items:center;gap:5px;}
+  .leg i{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  button{font-family:'Inter',sans-serif;}
+  @page{size:A4;margin:0;}
   @media print{
-    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}
-    body{padding:16px 20px;}
-    .hero{margin:-16px -20px 16px;}
-    button{display:none!important;}
-    .no-print{display:none!important;}
+    body{background:#fff;}
+    .toolbar{display:none!important;}
+    .sheet{max-width:none;margin:0;box-shadow:none;}
   }
-
 </style>
 </head>
 <body>
-  <div class="no-print" style="margin-bottom:16px;display:flex;gap:10px;">
+  <div class="toolbar">
     <button onclick="window.print()" style="padding:10px 22px;background:#FF5A36;color:#fff;border:none;border-radius:999px;font-size:14px;font-weight:700;cursor:pointer;">🖨 Imprimer / Enregistrer en PDF</button>
-    <button onclick="window.close()" style="padding:10px 18px;background:#f1f5f9;color:#333;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;cursor:pointer;">✕ Fermer</button>
+    <button onclick="window.close()" style="padding:10px 18px;background:#f1f5f9;color:#333;border:1px solid #cbd5e1;border-radius:999px;font-size:14px;cursor:pointer;">✕ Fermer</button>
   </div>
 
-  <div class="hero">
-    <svg class="hero-scene" viewBox="0 0 800 160" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      <defs><linearGradient id="hw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38D1F0" stop-opacity=".5"/><stop offset="1" stop-color="#38D1F0" stop-opacity="0"/></linearGradient></defs>
-      ${_pdfSwimmer}
-      <path d="M0 128 q20 -7 40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 V160 H0Z" fill="url(#hw)"/>
-      <path d="M0 142 q20 -6 40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 V160 H0Z" fill="#38D1F0" fill-opacity=".1"/>
-    </svg>
-    <div class="hero-left">
-      <div class="hero-brand">SwimCoach <span>App</span> <i>· TOAC Natation</i></div>
-      <h1>${statMode==='season'?'Bilan de saison':'Bilan de présence'}</h1>
-      <div class="hero-sub">${periodLabel} · édité le ${dateGen}</div>
+  <div class="sheet" style="${dens}">
+    <div class="hero">
+      <svg viewBox="0 0 794 232" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+        <defs><linearGradient id="wCp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38D1F0" stop-opacity="0.5"/><stop offset="1" stop-color="#38D1F0" stop-opacity="0"/></linearGradient></defs>
+        ${_pdfSwimmer}
+        <path d="M0 196 q20 -7 40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 V232 H0Z" fill="url(#wCp)"/>
+        <path d="M0 212 q20 -5 40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 V232 H0Z" fill="#38D1F0" fill-opacity="0.1"/>
+      </svg>
+      <div class="hero-in">
+        <div class="hero-l">
+          <span class="brand">SwimCoach <span class="a">App</span> <span class="t">· TOAC Natation</span></span>
+          <h1>Bilan<br>${isSeason?'de saison':'du mois'}</h1>
+          <span class="period">${periodShort}</span>
+        </div>
+        <div class="hero-r">
+          <span class="dlabel">DISTANCE NATATION</span>
+          <span class="dkm" style="font-size:${kmFs}px">${kmStr}<small> km</small></span>
+          <span class="davg">${avgLine}</span>
+        </div>
+      </div>
     </div>
-    <div class="hero-right">
-      <span class="hero-label">DISTANCE NATATION</span>
-      <span class="hero-km">${nat.km.toFixed(1).replace('.',',')}<small> km</small></span>
-      <span class="hero-note">${nat.count} séance${nat.count>1?'s':''}${nat.count>0?` · ${(nat.km/nat.count).toFixed(1).replace('.',',')} km / séance`:''}</span>
+
+    <div class="kpis" style="grid-template-columns:repeat(${hasComp?3:2},minmax(0,1fr))">
+      <div class="kpi k-nat"><span>Séances natation</span><b>${nat.count}</b></div>
+      <div class="kpi k-musc"><span>Séances muscu</span><b>${musc.count}</b></div>
+      ${hasComp?`<div class="kpi k-comp"><span>Compétitions</span><b>${comp.count}</b></div>`:''}
+    </div>
+
+    <div class="list">
+      <div class="head cols"><span>NAGEUR</span><span class="n">NATATION</span><span class="m">MUSCU</span>${hasComp?'<span class="c">COMPÉT.</span>':''}<span class="d">DISTANCE</span></div>
+      ${lignes || '<div class="empty">Aucun nageur sur cette période</div>'}
+    </div>
+
+    <div class="foot">
+      <span class="leg">
+        <span><i style="background:#15803D"></i>75 % et plus</span>
+        <span><i style="background:#C2410C"></i>50 à 74 %</span>
+        <span><i style="background:#B91C1C"></i>moins de 50 %</span>
+      </span>
+      <span>SwimCoach App · TOAC Natation · édité le ${dateGen}</span>
     </div>
   </div>
-
-  <div class="kpis">
-    <div class="kpi kpi-nat"><span>Séances natation</span><b>${nat.count}</b></div>
-    <div class="kpi kpi-musc"><span>Séances muscu</span><b>${musc.count}</b></div>
-    ${comp.count>0?`<div class="kpi kpi-comp"><span>Compétitions</span><b>${comp.count}</b></div>`:''}
-  </div>
-
-  <div class="legend">
-    <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div>75–100% · Excellent</div>
-    <div class="leg-item"><div class="leg-dot" style="background:#f97316"></div>50–74% · Moyen</div>
-    <div class="leg-item"><div class="leg-dot" style="background:#ef4444"></div>&lt; 50% · Insuffisant</div>
-  </div>
-
-  <table>
-    <thead>
-      <tr class="group-row">
-        <th rowspan="2">Nom / Prénom</th>
-        <th colspan="3" class="group-nat">🏊 Natation</th>
-        <th colspan="2" class="group-musc">💪 Musculation</th>
-        ${comp.count>0?'<th colspan="2" class="group-comp">🏆 Compétition</th>':''}
-      </tr>
-      <tr>
-        <th class="right">Séances</th>
-        <th class="right">Km</th>
-        <th class="right">%</th>
-        <th class="right">Séances</th>
-        <th class="right">%</th>
-        ${comp.count>0?'<th class="right">Présences</th><th class="right">%</th>':''}
-      </tr>
-    </thead>
-    <tbody>
-      ${lignes}
-    </tbody>
-  </table>
-
-  <div class="footer">
-    <span>SwimCoach App — ${moisLabel}</span>
-    <span>${rows.length} nageur${rows.length>1?'s':''}</span>
-  </div>
-
 </body>
 </html>`;
 
